@@ -32,26 +32,56 @@ export function LandingAuth() {
       }
 
       if (authMode === "signup") {
-        const { error } = await supabase.auth.signUp({
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: { data: { role: userType } },
         })
-        if (error) throw error
-        toast.success("Account created! Check your email to confirm.")
+
+        if (error) {
+          console.error("Signup error:", error)
+          throw error
+        }
+
+        if (data.user && !data.session) {
+          toast.success("Account created! Check your email to confirm before logging in.")
+        } else {
+          toast.success("Account created! Redirecting...")
+          setTimeout(() => {
+            router.push(`/dashboard?role=${userType}`)
+          }, 1500)
+        }
       } else {
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
-        if (error) throw error
+
+        if (error) {
+          console.error("Signin error:", error)
+
+          // If user not found, offer sign-up
+          if (error.message.includes("Invalid login credentials")) {
+            const shouldSignUp = window.confirm(
+              "No account found with these credentials. Do you want to sign up instead?"
+            )
+            if (shouldSignUp) {
+              setAuthMode("signup")
+            }
+          }
+
+          throw error
+        }
+
         toast.success(`Welcome back! Redirecting to your ${userType} dashboard...`)
         setTimeout(() => {
           router.push(`/dashboard?role=${userType}`)
         }, 1500)
       }
     } catch (error: any) {
-      toast.error(error.message || "Authentication failed")
+      if (!error.message.includes("Invalid login credentials")) {
+        toast.error(error.message || "Authentication failed")
+      }
     } finally {
       setIsLoading(false)
     }
@@ -63,11 +93,13 @@ export function LandingAuth() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          // ✅ Always use current domain (works on localhost + Vercel)
           redirectTo: `${window.location.origin}/dashboard?role=${userType}`,
         },
       })
-      if (error) throw error
+      if (error) {
+        console.error("Google sign-in error:", error)
+        throw error
+      }
     } catch (error: any) {
       toast.error(error.message || "Google sign-in failed")
     }
