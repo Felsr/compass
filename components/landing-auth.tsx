@@ -19,6 +19,7 @@ export function LandingAuth() {
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin")
   const router = useRouter()
 
+  // Handle email/password auth
   const handleSubmit = async (e: React.FormEvent, userType: string) => {
     e.preventDefault()
     setIsLoading(true)
@@ -34,9 +35,7 @@ export function LandingAuth() {
         const { error } = await supabase.auth.signUp({
           email,
           password,
-          options: {
-            data: { role: userType },
-          },
+          options: { data: { role: userType } },
         })
         if (error) throw error
         toast.success("Account created! Check your email to confirm.")
@@ -58,11 +57,13 @@ export function LandingAuth() {
     }
   }
 
+  // Handle Google OAuth
   const handleGoogle = async (userType: string) => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
+          // ✅ Always use current domain (works on localhost + Vercel)
           redirectTo: `${window.location.origin}/dashboard?role=${userType}`,
         },
       })
