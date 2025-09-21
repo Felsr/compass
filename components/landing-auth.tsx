@@ -31,35 +31,44 @@ export function LandingAuth() {
       }
 
       if (authMode === "signup") {
-        // ✅ Attempt signup
-        const { error } = await supabase.auth.signUp({
+        // Try sign up
+        const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { role: userType } },
+          options: {
+            data: { role: userType },
+          },
         })
 
         if (error) {
           if (error.message.includes("already registered")) {
-            toast.error("User already exists. Please sign in instead.")
+            toast.error("You already have an account. Please sign in.")
             setAuthMode("signin")
-            setIsLoading(false)
-            return
+          } else {
+            toast.error(error.message)
           }
-          throw error
+          return
         }
 
-        toast.success(
-          "Account created successfully. Please sign in with your credentials."
-        )
-        setAuthMode("signin")
+        if (data.user) {
+          toast.success("Account created! Please sign in.")
+          setAuthMode("signin")
+        }
       } else {
-        // ✅ Sign In
-        const { error } = await supabase.auth.signInWithPassword({
+        // Sign in
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
 
-        if (error) throw error
+        if (error) {
+          if (error.message.includes("Invalid login credentials")) {
+            toast.error("Invalid email or password.")
+          } else {
+            toast.error(error.message)
+          }
+          return
+        }
 
         toast.success(`Welcome back! Redirecting to your ${userType} dashboard...`)
         setTimeout(() => {
@@ -75,18 +84,13 @@ export function LandingAuth() {
 
   const handleGoogle = async (userType: string) => {
     try {
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo: `${window.location.origin}/dashboard?role=${userType}`,
         },
       })
-
       if (error) throw error
-
-      // Supabase will handle redirect, but we can check session later
-      // We only show a toast here
-      toast.success("Redirecting to Google...")
     } catch (error: any) {
       toast.error(error.message || "Google sign-in failed")
     }
