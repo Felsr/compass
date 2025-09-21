@@ -19,7 +19,7 @@ export function LandingAuth() {
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin")
   const router = useRouter()
 
-  const handleSubmit = async (e: React.FormEvent, userType: "student" | "parent") => {
+  const handleSubmit = async (e: React.FormEvent, userType: string) => {
     e.preventDefault()
     setIsLoading(true)
 
@@ -31,40 +31,35 @@ export function LandingAuth() {
       }
 
       if (authMode === "signup") {
-        // Signup
-        const { data, error } = await supabase.auth.signUp({
+        // ✅ Attempt signup
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { role: userType } },
+        })
+
+        if (error) {
+          if (error.message.includes("already registered")) {
+            toast.error("User already exists. Please sign in instead.")
+            setAuthMode("signin")
+            setIsLoading(false)
+            return
+          }
+          throw error
+        }
+
+        toast.success(
+          "Account created successfully. Please sign in with your credentials."
+        )
+        setAuthMode("signin")
+      } else {
+        // ✅ Sign In
+        const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
 
         if (error) throw error
-
-        if (data.user) {
-          // Insert into profiles table
-          const { error: insertError } = await supabase.from("profiles").insert({
-            id: data.user.id,
-            email,
-            role: userType,
-          })
-
-          if (insertError) {
-            console.error("Profile insert error:", insertError.message)
-          }
-        }
-
-        toast.success("Account created! You can now log in.")
-      } else {
-        // Signin
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        })
-
-        if (error) {
-          toast.error("User not found. Would you like to sign up instead?")
-          setAuthMode("signup")
-          return
-        }
 
         toast.success(`Welcome back! Redirecting to your ${userType} dashboard...`)
         setTimeout(() => {
@@ -78,15 +73,20 @@ export function LandingAuth() {
     }
   }
 
-  const handleGoogle = async (userType: "student" | "parent") => {
+  const handleGoogle = async (userType: string) => {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
           redirectTo: `${window.location.origin}/dashboard?role=${userType}`,
         },
       })
+
       if (error) throw error
+
+      // Supabase will handle redirect, but we can check session later
+      // We only show a toast here
+      toast.success("Redirecting to Google...")
     } catch (error: any) {
       toast.error(error.message || "Google sign-in failed")
     }
@@ -112,7 +112,7 @@ export function LandingAuth() {
               <TabsTrigger value="parent">Parent</TabsTrigger>
             </TabsList>
 
-            {(["student", "parent"] as const).map((role) => (
+            {["student", "parent"].map((role) => (
               <TabsContent key={role} value={role}>
                 <form
                   onSubmit={(e) => handleSubmit(e, role)}

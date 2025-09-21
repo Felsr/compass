@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { motion, AnimatePresence } from "framer-motion"
 import { useTheme } from "next-themes"
 import { UnifiedSidebar } from "@/components/unified-sidebar"
@@ -11,68 +11,89 @@ import { GovernmentDashboard } from "@/components/government-dashboard-unified"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { toast } from "sonner"
 import { AIGuidanceAgent } from "@/components/ai-guidance-agent"
+import { supabase } from "@/lib/supabaseClient"
 
 export default function UnifiedDashboard() {
   const [activeTab, setActiveTab] = useState("student")
   const [language, setLanguage] = useState("en")
   const [userEmail, setUserEmail] = useState("")
   const [isLoading, setIsLoading] = useState(true)
-  const [isInitialized, setIsInitialized] = useState(false)
 
   const router = useRouter()
-  const searchParams = useSearchParams()
-
   const { theme, setTheme } = useTheme()
 
   useEffect(() => {
-    if (isInitialized) return
+    const initDashboard = async () => {
+      try {
+        // 1. Check Supabase session
+        const {
+          data: { user },
+          error,
+        } = await supabase.auth.getUser()
 
-    console.log("[v0] Dashboard useEffect triggered")
-    console.log("[v0] Current URL:", window.location.href)
-    console.log("[v0] Search params:", searchParams.toString())
+        if (error || !user) {
+          toast.error("Please sign in to access the dashboard")
+          setTimeout(() => router.push("/"), 1000)
+          return
+        }
 
-    const roleFromUrl = searchParams.get("role")
-    const storedRole = localStorage.getItem("userRole")
-    const storedEmail = localStorage.getItem("userEmail")
+        const email = user.email || ""
+        let role = user.user_metadata?.role || "student"
 
-    console.log("[v0] Dashboard loading with:", { roleFromUrl, storedRole, storedEmail })
+        // 2. Check if profile exists
+        const { data: profile, error: profileError } = await supabase
+          .from("profiles")
+          .select("id, role, email")
+          .eq("id", user.id)
+          .single()
 
-    // Allow access if either URL role or stored role exists
-    if (!storedRole && !roleFromUrl) {
-      console.log("[v0] No authentication found, redirecting to home")
-      toast.error("Please sign in to access the dashboard")
-      setTimeout(() => {
+        if (profileError || !profile) {
+          // Insert profile if not found (first-time login, e.g. Google)
+          const { error: insertError } = await supabase.from("profiles").insert({
+            id: user.id,
+            email,
+            role,
+          })
+          if (insertError) {
+            console.error("Profile insert error:", insertError.message)
+            toast.error("Error creating profile")
+          } else {
+            toast.success("Welcome! Your profile has been created 🎉")
+          }
+        } else {
+          role = profile.role
+        }
+
+        // Map admin to government
+        const mappedRole = role === "admin" ? "government" : role
+
+        // Save locally
+        localStorage.setItem("userRole", mappedRole)
+        localStorage.setItem("userEmail", email)
+
+        setActiveTab(mappedRole)
+        setUserEmail(email)
+
+        const roleLabel =
+          mappedRole === "government"
+            ? "Government Admin"
+            : mappedRole.charAt(0).toUpperCase() + mappedRole.slice(1)
+
+        toast.success(`Welcome to your ${roleLabel} Dashboard!`)
+      } catch (err: any) {
+        console.error("Dashboard init error:", err.message)
+        toast.error("Error loading dashboard")
         router.push("/")
-      }, 1000)
-      return
+      } finally {
+        setIsLoading(false)
+      }
     }
 
-    const userRole = roleFromUrl || storedRole || "student"
-    const email = storedEmail || ""
+    initDashboard()
+  }, [router])
 
-    // Map admin to government for consistency
-    const mappedRole = userRole === "admin" ? "government" : userRole
-
-    console.log("[v0] Setting dashboard role:", mappedRole)
-
-    setActiveTab(mappedRole)
-    setUserEmail(email)
-    setIsLoading(false)
-    setIsInitialized(true)
-
-    // Store the role if it came from URL
-    if (roleFromUrl && roleFromUrl !== storedRole) {
-      console.log("[v0] Updating stored role from URL:", roleFromUrl)
-      localStorage.setItem("userRole", roleFromUrl)
-    }
-
-    // Welcome message
-    const roleLabel =
-      mappedRole === "government" ? "Government Admin" : mappedRole.charAt(0).toUpperCase() + mappedRole.slice(1)
-    toast.success(`Welcome to your ${roleLabel} Dashboard!`)
-  }, [searchParams, router, isInitialized])
-
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
     localStorage.removeItem("userRole")
     localStorage.removeItem("userEmail")
     toast.success("Logged out successfully!")
@@ -147,7 +168,10 @@ export default function UnifiedDashboard() {
         </div>
       </div>
 
-      <AIGuidanceAgent userRole={activeTab as "student" | "parent" | "government"} currentSection={activeTab} />
+      <AIGuidanceAgent
+        userRole={activeTab as "student" | "parent" | "government"}
+        currentSection={activeTab}
+      />
     </div>
   )
 }
