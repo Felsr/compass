@@ -19,8 +19,7 @@ export function LandingAuth() {
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin")
   const router = useRouter()
 
-  // Handle email/password signup + login
-  const handleSubmit = async (e: React.FormEvent, userType: string) => {
+  const handleSubmit = async (e: React.FormEvent, userType: "student" | "parent") => {
     e.preventDefault()
     setIsLoading(true)
 
@@ -32,51 +31,38 @@ export function LandingAuth() {
       }
 
       if (authMode === "signup") {
-        // SIGN UP
+        // Signup
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { data: { role: userType } },
         })
 
-        console.log("Signup data:", data)
-        console.log("Signup error:", error)
+        if (error) throw error
 
-        if (error) {
-          toast.error(error.message || "Signup failed")
-          return
+        if (data.user) {
+          // Insert into profiles table
+          const { error: insertError } = await supabase.from("profiles").insert({
+            id: data.user.id,
+            email,
+            role: userType,
+          })
+
+          if (insertError) {
+            console.error("Profile insert error:", insertError.message)
+          }
         }
 
-        // If email confirmation is enabled, Supabase returns a user but no session
-        if (data.user && !data.session) {
-          toast.success("Account created! Check your email to confirm before logging in.")
-        } else {
-          toast.success("Account created! Redirecting...")
-          setTimeout(() => {
-            router.push(`/dashboard?role=${userType}`)
-          }, 1500)
-        }
+        toast.success("Account created! You can now log in.")
       } else {
-        // SIGN IN
-        const { error } = await supabase.auth.signInWithPassword({
+        // Signin
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
 
-        console.log("Signin error:", error)
-
         if (error) {
-          // If user not found, ask if they want to sign up
-          if (error.message?.toLowerCase().includes("invalid login credentials")) {
-            const shouldSignUp = window.confirm(
-              "No account found with these credentials. Do you want to sign up instead?"
-            )
-            if (shouldSignUp) {
-              setAuthMode("signup")
-            }
-          } else {
-            toast.error(error.message || "Signin failed")
-          }
+          toast.error("User not found. Would you like to sign up instead?")
+          setAuthMode("signup")
           return
         }
 
@@ -92,18 +78,16 @@ export function LandingAuth() {
     }
   }
 
-  // Handle Google OAuth
-  const handleGoogle = async (userType: string) => {
+  const handleGoogle = async (userType: "student" | "parent") => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/dashboard?role=${userType}`, // works for localhost + Vercel
+          redirectTo: `${window.location.origin}/dashboard?role=${userType}`,
         },
       })
       if (error) throw error
     } catch (error: any) {
-      console.error("Google sign-in error:", error)
       toast.error(error.message || "Google sign-in failed")
     }
   }
@@ -128,7 +112,7 @@ export function LandingAuth() {
               <TabsTrigger value="parent">Parent</TabsTrigger>
             </TabsList>
 
-            {["student", "parent"].map((role) => (
+            {(["student", "parent"] as const).map((role) => (
               <TabsContent key={role} value={role}>
                 <form
                   onSubmit={(e) => handleSubmit(e, role)}
