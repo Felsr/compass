@@ -19,7 +19,7 @@ export function LandingAuth() {
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin")
   const router = useRouter()
 
-  // Handle email/password auth
+  // Handle email/password signup + login
   const handleSubmit = async (e: React.FormEvent, userType: string) => {
     e.preventDefault()
     setIsLoading(true)
@@ -32,17 +32,22 @@ export function LandingAuth() {
       }
 
       if (authMode === "signup") {
+        // SIGN UP
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
           options: { data: { role: userType } },
         })
 
+        console.log("Signup data:", data)
+        console.log("Signup error:", error)
+
         if (error) {
-          console.error("Signup error:", error)
-          throw error
+          toast.error(error.message || "Signup failed")
+          return
         }
 
+        // If email confirmation is enabled, Supabase returns a user but no session
         if (data.user && !data.session) {
           toast.success("Account created! Check your email to confirm before logging in.")
         } else {
@@ -52,25 +57,27 @@ export function LandingAuth() {
           }, 1500)
         }
       } else {
+        // SIGN IN
         const { error } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
 
-        if (error) {
-          console.error("Signin error:", error)
+        console.log("Signin error:", error)
 
-          // If user not found, offer sign-up
-          if (error.message.includes("Invalid login credentials")) {
+        if (error) {
+          // If user not found, ask if they want to sign up
+          if (error.message?.toLowerCase().includes("invalid login credentials")) {
             const shouldSignUp = window.confirm(
               "No account found with these credentials. Do you want to sign up instead?"
             )
             if (shouldSignUp) {
               setAuthMode("signup")
             }
+          } else {
+            toast.error(error.message || "Signin failed")
           }
-
-          throw error
+          return
         }
 
         toast.success(`Welcome back! Redirecting to your ${userType} dashboard...`)
@@ -79,9 +86,7 @@ export function LandingAuth() {
         }, 1500)
       }
     } catch (error: any) {
-      if (!error.message.includes("Invalid login credentials")) {
-        toast.error(error.message || "Authentication failed")
-      }
+      toast.error(error.message || "Authentication failed")
     } finally {
       setIsLoading(false)
     }
@@ -93,14 +98,12 @@ export function LandingAuth() {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/dashboard?role=${userType}`,
+          redirectTo: `${window.location.origin}/dashboard?role=${userType}`, // works for localhost + Vercel
         },
       })
-      if (error) {
-        console.error("Google sign-in error:", error)
-        throw error
-      }
+      if (error) throw error
     } catch (error: any) {
+      console.error("Google sign-in error:", error)
       toast.error(error.message || "Google sign-in failed")
     }
   }
